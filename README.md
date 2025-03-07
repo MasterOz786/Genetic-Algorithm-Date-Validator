@@ -1,1 +1,3 @@
-Initiating Assignment 2 repo from Command Line
+# Applied AI: Genetic Algorithms 
+
+Utilizing Genetic Algorithms to Validate Dates
