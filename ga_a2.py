@@ -1,199 +1,193 @@
 import random
+import csv
+import matplotlib.pyplot as plt
 from typing import List, Tuple, Dict
-from dataclasses import dataclass
 
-# Define types and constants
 Tareekh = Tuple[int, int, int]
-Jamaa = List[Tareekh]
-TOTAL_QISMS = 13
+TOTAL_CATEGORIES = 11
 
-@dataclass
-class Misaal:
-    tareekh: Tareekh
-    qism: str
-    sahi_ha: bool
+def leap_ka_jach(year: int) -> bool:
+    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
 
-def leap_ka_jach(saal: int) -> bool:
-    return saal % 4 == 0 and (saal % 100 != 0 or saal % 400 == 0)
-
-def date_theek_ha(t: Tareekh) -> bool:
-    din, mahina, saal = t
-    if not (0 <= saal <= 9999):
-        return False
-    if not (1 <= mahina <= 12):
-        return False
-    if not (1 <= din <= 31):
-        return False
-    mahine_ke_din = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-    if leap_ka_jach(saal):
-        mahine_ke_din[2] = 29
-    return din <= mahine_ke_din[mahina]
-
-def tareekh_ki_qism(t: Tareekh) -> str:
-    din, mahina, saal = t
-    if not (0 <= saal <= 9999):
-        return "Ghalat_Saal"
-    if not (1 <= mahina <= 12):
-        return "Ghalat_Mahina"
-    if not (1 <= din <= 31):
-        return "Ghalat_Din"
-    if mahina == 2:
-        if leap_ka_jach(saal):
-            if din == 29:
-                return "Sahi_Leap_Feb29"
-            elif din > 29:
-                return "Ghalat_Leap_Feb"
+def categorize_date(date: Tareekh) -> str:
+    day, month, year = date
+    if day < 1:
+        return "Invalid_Day_LT1"
+    if day > 31:
+        return "Invalid_Day_GT31"
+    if month < 1:
+        return "Invalid_Month_LT1"
+    if month > 12:
+        return "Invalid_Month_GT12"
+    if year < 0 or year > 9999:
+        return "Invalid_Year"
+    if day == 1 and month == 1 and year == 0:
+        return "Boundary_Min"
+    if day == 31 and month == 12 and year == 9999:
+        return "Boundary_Max"
+    if month == 2:
+        if leap_ka_jach(year):
+            if day == 29:
+                return "Valid_Leap_Year"
+            elif day > 29:
+                return "Invalid_Feb_Day"
+            else:
+                return "Valid_NonLeap_Feb"
         else:
-            if din > 28:
-                return "Ghalat_NonLeap_Feb"
-    din_per_mahina = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-    if din > din_per_mahina[mahina]:
-        return f"Ghalat_Din_Mahina_{mahina}"
-    if din == 31 and mahina in [1, 3, 5, 7, 8, 10, 12]:
-        return "Sahi_31_Din"
-    if din == 30 and mahina in [4, 6, 9, 11]:
-        return "Sahi_30_Din"
-    if saal in [0, 9999]:
-        return "Had_Basta_Saal"
-    return "Sahi_Saada_Tareekh"
+            if day == 29:
+                return "Invalid_Feb29_NonLeap"
+            elif day > 28:
+                return "Invalid_Feb_Day"
+            else:
+                return "Valid_NonLeap_Feb"
+    if month in [4, 6, 9, 11]:
+        if day == 30:
+            return "Valid_30Day"
+        elif day == 31:
+            return "Invalid_Day_For_30DayMonth"
+        else:
+            return "Valid_Date"
+    if month in [1, 3, 5, 7, 8, 10, 12]:
+        if day == 31:
+            return "Valid_31Day"
+        else:
+            return "Valid_Date"
+    return "Valid_Date"
 
-def random_tareekh_banao() -> Tareekh:
-    return (random.randint(0, 32), random.randint(0, 13), random.randint(-1, 10000))
+def is_valid_date(date: Tareekh) -> bool:
+    valid_cats = {"Boundary_Min", "Boundary_Max", "Valid_Leap_Year", "Valid_NonLeap_Feb", "Valid_30Day", "Valid_31Day", "Valid_Date"}
+    return categorize_date(date) in valid_cats
 
-def shuru_jamaa(size: int) -> Jamaa:
-    return [random_tareekh_banao() for _ in range(size)]
+def random_date() -> Tareekh:
+    return (random.randint(1, 31), random.randint(1, 12), random.randint(0, 9999))
 
-def compute_frequencies(jamaa: Jamaa) -> Dict[str, int]:
-    freq = {}
-    for t in jamaa:
-        cat = tareekh_ki_qism(t)
+def initialize_population(size: int) -> List[Tareekh]:
+    return [random_date() for _ in range(size)]
+
+def fitness_function(population: List[Tareekh]) -> float:
+    freq: Dict[str, int] = {}
+    for date in population:
+        cat = categorize_date(date)
         freq[cat] = freq.get(cat, 0) + 1
-    return freq
+    unique = len(freq)
+    redundancy = sum(count - 1 for count in freq.values())
+    fitness = unique * 10 - redundancy
+    return fitness
 
-# Individual fitness based on rarity: rarer categories get a higher score.
-def individual_fitness(t: Tareekh, freq: Dict[str, int]) -> float:
-    return 1.0 / freq[tareekh_ki_qism(t)]
+def rank_selection(population: List[Tareekh]) -> Tareekh:
+    contenders = random.sample(population, 3)
+    contenders.sort(key=lambda d: fitness_function([d]), reverse=True)
+    return contenders[0]
 
-# Tournament selection using individual fitness based on rarity
-def chun_lo_bhai(jamaa: Jamaa, num: int) -> Jamaa:
-    ret = []
-    freq = compute_frequencies(jamaa)
-    for _ in range(num):
-        tour = random.sample(jamaa, k=3)
-        tour.sort(key=lambda x: individual_fitness(x, freq), reverse=True)
-        ret.append(tour[0])
-    return ret
+def crossover(parent1: Tareekh, parent2: Tareekh) -> Tareekh:
+    return (parent1[0] if random.random() < 0.5 else parent2[0],
+            parent1[1] if random.random() < 0.5 else parent2[1],
+            parent1[2] if random.random() < 0.5 else parent2[2])
 
-def jod_shod(bhai1: Tareekh, bhai2: Tareekh) -> Tareekh:
-    choice = [random.random() < 0.5 for _ in range(3)]
-    return (bhai1[0] if choice[0] else bhai2[0],
-            bhai1[1] if choice[1] else bhai2[1],
-            bhai1[2] if choice[2] else bhai2[2])
-
-def badal_de(t: Tareekh, mutation_rate: float) -> Tareekh:
-    din, mahina, saal = t
+def mutation(date: Tareekh, mutation_rate: float = 0.15) -> Tareekh:
+    day, month, year = date
     if random.random() < mutation_rate:
-        din += random.randint(-3, 3)
+        day += random.randint(-3, 3)
     if random.random() < mutation_rate:
-        mahina += random.randint(-1, 1)
+        month += random.randint(-1, 1)
     if random.random() < mutation_rate:
-        saal += random.randint(-100, 100)
-    return (din, mahina, saal)
+        year += random.randint(-100, 100)
+    return (day, month, year)
 
-def badalte_raho(jamaa: Jamaa, mutation_rate: float = 0.4, elite_size: int = 2) -> Jamaa:
-    n = len(jamaa)
-    # Elite preservation: keep best individuals (here best = having rare categories)
-    jamaa.sort(key=lambda x: tareekh_ki_qism(x))
-    new_jamaa = jamaa[:elite_size]
-    while len(new_jamaa) < n:
-        parents = chun_lo_bhai(jamaa, 2)
-        child = jod_shod(parents[0], parents[1])
-        child = badal_de(child, mutation_rate)
-        new_jamaa.append(child)
-    return new_jamaa
+def evolve_population(population: List[Tareekh], mutation_rate: float = 0.15, elite_size: int = 2) -> List[Tareekh]:
+    population.sort(key=lambda d: fitness_function([d]), reverse=True)
+    new_population = population[:elite_size]
+    while len(new_population) < len(population):
+        parent1 = rank_selection(population)
+        parent2 = rank_selection(population)
+        child = crossover(parent1, parent2)
+        child = mutation(child, mutation_rate)
+        new_population.append(child)
+    return new_population
 
-# Overall fitness: number of unique qisms in the population.
-def overall_fitness(jamaa: Jamaa) -> int:
-    unique = len({tareekh_ki_qism(t) for t in jamaa})
-    return unique
+def get_unique_categories(population: List[Tareekh]) -> int:
+    return len({categorize_date(d) for d in population})
 
-def chala_daal_algorithm(pop_size: int = 300, generations: int = 300, mutation_rate: float = 0.4, target_coverage: float = 0.90) -> Tuple[Jamaa, List[int]]:
-    jamaa = shuru_jamaa(pop_size)
-    history = []
-    print("GA starting with population size:", pop_size)
+def ga_run(pop_size: int = 200, generations: int = 100, mutation_rate: float = 0.15, target_coverage: float = 0.95) -> Tuple[List[Tareekh], List[float]]:
+    population = initialize_population(pop_size)
+    coverage_history = []
+    print("Chalo, GA shuru ho gaya! Population size:", pop_size)
     for gen in range(generations):
-        jamaa = badalte_raho(jamaa, mutation_rate)
-        unique = overall_fitness(jamaa)
-        history.append(unique)
-        freq = compute_frequencies(jamaa)
-        # Detailed log per generation
-        print(f"Gen {gen}: Unique Qisms = {unique} out of {TOTAL_QISMS} | Frequencies: {freq}")
-        # Target: 90% coverage (i.e. at least 12 unique categories)
-        if unique >= target_coverage * TOTAL_QISMS:
-            print(f"Bhai, target coverage reached at Gen {gen}")
+        population = evolve_population(population, mutation_rate)
+        unique_cats = get_unique_categories(population)
+        coverage = unique_cats / TOTAL_CATEGORIES
+        coverage_history.append(coverage * 100)
+        print(f"Gen {gen}: Unique Categories = {unique_cats}/{TOTAL_CATEGORIES}, Coverage = {coverage * 100:.2f}%, Fitness = {fitness_function(population):.2f}")
+        freq: Dict[str, int] = {}
+        for d in population:
+            cat = categorize_date(d)
+            freq[cat] = freq.get(cat, 0) + 1
+        print("Category Frequencies:", freq)
+        if coverage >= target_coverage:
+            print(f"Target coverage {target_coverage*100:.2f}% reached at Gen {gen}!")
             break
-    return jamaa, history
+    return population, coverage_history
 
-def tareekh_format(t: Tareekh) -> str:
-    return f"{t[0]:02d}/{t[1]:02d}/{t[2]:04d}"
+def select_final_test_cases(population: List[Tareekh]) -> Tuple[List[str], List[str]]:
+    valid_cases = [d for d in population if is_valid_date(d)]
+    invalid_cases = [d for d in population if not is_valid_date(d)]
+    while len(valid_cases) < 10:
+        cand = random_date()
+        if is_valid_date(cand):
+            valid_cases.append(cand)
+    while len(invalid_cases) < 10:
+        cand = random_date()
+        if not is_valid_date(cand):
+            invalid_cases.append(cand)
+    boundary_candidates = [(1, 1, 0), (31, 12, 9999), (29, 2, 2020), (31, 1, 2023), (1, 12, 0)]
+    for b in boundary_candidates:
+        if is_valid_date(b) and b not in valid_cases:
+            valid_cases.append(b)
+        elif not is_valid_date(b) and b not in invalid_cases:
+            invalid_cases.append(b)
+    valid_strings = [f"{d[0]:02d}/{d[1]:02d}/{d[2]:04d}" for d in valid_cases[:10]]
+    invalid_strings = [f"{d[0]:02d}/{d[1]:02d}/{d[2]:04d}" for d in invalid_cases[:10]]
+    return valid_strings, invalid_strings
 
-def final_test_cases(jamaa: Jamaa) -> Tuple[List[Tareekh], List[Tareekh]]:
-    valid = [t for t in jamaa if date_theek_ha(t)]
-    invalid = [t for t in jamaa if not date_theek_ha(t)]
-    while len(valid) < 10:
-        cand = random_tareekh_banao()
-        if date_theek_ha(cand):
-            valid.append(cand)
-    while len(invalid) < 10:
-        cand = random_tareekh_banao()
-        if not date_theek_ha(cand):
-            invalid.append(cand)
-    return valid[:10], invalid[:10]
+def save_test_cases_csv(valid: List[str], invalid: List[str], filename: str = "test_cases.csv") -> None:
+    with open(filename, mode="w", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow(["Test Case", "Category"])
+        for case in valid:
+            d = tuple(map(int, case.split('/')))
+            writer.writerow([case, categorize_date(d)])
+        for case in invalid:
+            d = tuple(map(int, case.split('/')))
+            writer.writerow([case, categorize_date(d)])
+    print("Test cases saved to", filename)
 
-def calculate_coverage(valid: List[Tareekh], invalid: List[Tareekh]) -> float:
-    sab = valid + invalid
-    unique = len({tareekh_ki_qism(t) for t in sab})
-    return (unique / TOTAL_QISMS) * 100
-
-def natija_dekho(jamaa: Jamaa) -> None:
-    valid = [t for t in jamaa if date_theek_ha(t)]
-    invalid = [t for t in jamaa if not date_theek_ha(t)]
-    print("\nSahi Tareekh (Valid):")
-    print("=" * 30)
-    for t in valid[:10]:
-        print(f"  {tareekh_format(t)}")
-    print("\nGhalat Tareekh (Invalid):")
-    print("=" * 30)
-    for t in invalid[:10]:
-        print(f"  {tareekh_format(t)}")
-    cov = calculate_coverage(valid[:10], invalid[:10])
-    print(f"\nQism Coverage: {cov:.2f}%")
+def plot_coverage(coverage_history: List[float]) -> None:
+    plt.plot(range(len(coverage_history)), coverage_history, marker='o', linestyle='-')
+    plt.title("GA Coverage Improvement Over Generations")
+    plt.xlabel("Generation")
+    plt.ylabel("Coverage (%)")
+    plt.grid(True)
+    plt.savefig("coverage_graph.png")
+    plt.show()
 
 def main():
-    print("Chalo bhai, GA shuru kar rahe hain...")
-    jamaa, hist = chala_daal_algorithm()
-    print("\nGA complete ho gaya!")
-    valid, invalid = final_test_cases(jamaa)
-    print("\nFinal Test Cases (10 Valid & 10 Invalid):")
-    print("=" * 50)
-    print("\nValid Dates:")
-    for t in valid:
-        print(f"  {tareekh_format(t)}")
-    print("\nInvalid Dates:")
-    for t in invalid:
-        print(f"  {tareekh_format(t)}")
-    cov = calculate_coverage(valid, invalid)
-    print(f"\nOverall Qism Coverage: {cov:.2f}%")
-    with open("test_cases.txt", "w") as f:
-        f.write("Final Test Cases (10 Valid & 10 Invalid):\n")
-        f.write("=" * 50 + "\n")
-        f.write("\nValid Dates:\n")
-        for t in valid:
-            f.write(f"{tareekh_format(t)}\n")
-        f.write("\nInvalid Dates:\n")
-        for t in invalid:
-            f.write(f"{tareekh_format(t)}\n")
-        f.write(f"\nOverall Qism Coverage: {cov:.2f}%\n")
+    print("GA ke liye Date Validation Test Cases generate karna shuru!")
+    population, coverage_history = ga_run(pop_size=200, generations=100, mutation_rate=0.15, target_coverage=0.95)
+    print("GA complete ho gaya!")
+    valid, invalid = select_final_test_cases(population)
+    print("Final Test Cases (DD/MM/YYYY):")
+    print("Valid Cases:")
+    for case in valid:
+        d = tuple(map(int, case.split('/')))
+        print(case, "-", categorize_date(d))
+    print("Invalid Cases:")
+    for case in invalid:
+        d = tuple(map(int, case.split('/')))
+        print(case, "-", categorize_date(d))
+    overall_coverage = len({categorize_date(d) for d in population}) / TOTAL_CATEGORIES * 100
+    print(f"Overall Category Coverage: {overall_coverage:.2f}%")
+    save_test_cases_csv(valid, invalid)
+    plot_coverage(coverage_history)
 
 if __name__ == "__main__":
     main()
